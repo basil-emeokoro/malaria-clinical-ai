@@ -1,4 +1,4 @@
-age,sex,fever,cold,rigor,fatigue,headace,bitter_tongue,vomitting,diarrhea,Convulsion,Anemia,jundice,cocacola_urine,hypoglycemia,prostraction,hyperpyrexia,severe_maleria
+age,sex,fever,cold,rigor,fatigue,headache,bitter_tongue,vomiting,diarrhea,convulsion,anemia,jaundice,coca_cola_urine,hypoglycemia,prostration,hyperpyrexia,severe_malaria
 3,1,1,1,0,1,1,1,0,1,1,0,1,1,1,0,0,0
 3,0,1,1,1,1,1,1,0,1,0,0,0,1,1,0,0,0
 3,0,1,1,1,1,1,0,0,1,1,0,0,1,1,0,0,1

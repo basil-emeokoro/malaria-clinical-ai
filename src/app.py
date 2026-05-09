@@ -1,5 +1,5 @@
 """
-app.py — Malaria Severity Prediction API (V2)
+app.py — Malaria Severity Prediction API (V3)
 ------------------------------------------------
 Clean Clinical ML API
 
@@ -9,6 +9,7 @@ Features:
 ✅ Explainability-ready
 ✅ SHAP-ready architecture
 ✅ Clinical prediction API
+✅ Payload debugging
 """
 
 import logging
@@ -36,19 +37,10 @@ app = Flask(__name__)
 # ------------------------------------------------
 # LOAD TRAINED MODEL + FEATURES
 # ------------------------------------------------
-# IMPORTANT:
-# We now use:
-#
-# ✅ model_v2.joblib
-# ✅ NO SCALER
-#
-# Tree-based models like RandomForest
-# do not require scaling.
-# ------------------------------------------------
-model = joblib.load("model/model_v2.joblib")
+model = joblib.load("model/model_v3.joblib")
 
 FEATURES = joblib.load(
-    "model/features_v2.joblib"
+    "model/features_v3.joblib"
 )
 
 # ------------------------------------------------
@@ -84,7 +76,7 @@ def info():
 
         "model": "Malaria Severity Classifier",
 
-        "version": "3.0.0",
+        "version": "3.1.0",
 
         "description": (
             "Predicts malaria severity "
@@ -94,7 +86,7 @@ def info():
         "features": FEATURES,
 
         "target": (
-            "severe_maleria "
+            "severe_malaria "
             "(0 = not severe, 1 = severe)"
         ),
 
@@ -119,6 +111,14 @@ def predict():
     # --------------------------------------------
     body = request.get_json(silent=True)
 
+    # --------------------------------------------
+    # DEBUGGING: RAW INPUT
+    # --------------------------------------------
+    print("\n================================================")
+    print("[RAW INPUT DATA]")
+    print(body)
+    print("================================================")
+
     if body is None:
 
         stats["errors"] += 1
@@ -128,7 +128,7 @@ def predict():
         }), 400
 
     # --------------------------------------------
-    # Validate all required features
+    # Validate required features
     # --------------------------------------------
     missing = [
         f for f in FEATURES
@@ -146,7 +146,7 @@ def predict():
         }), 422
 
     # --------------------------------------------
-    # Convert request into dataframe
+    # Convert request into DataFrame
     # --------------------------------------------
     try:
 
@@ -154,6 +154,13 @@ def predict():
             [[float(body[f]) for f in FEATURES]],
             columns=FEATURES
         )
+
+        # ----------------------------------------
+        # DEBUGGING: MODEL INPUT
+        # ----------------------------------------
+        print("\n[MODEL INPUT]")
+        print(X)
+        print("================================================\n")
 
     except Exception as e:
 
@@ -196,14 +203,6 @@ def predict():
 
     # --------------------------------------------
     # EXPLAINABILITY SECTION
-    # --------------------------------------------
-    # Extract feature importance directly
-    # from trained RandomForest model.
-    #
-    # Enables:
-    # ✅ charts
-    # ✅ SHAP integration
-    # ✅ explainable AI
     # --------------------------------------------
     top_contributors = []
 
@@ -265,7 +264,7 @@ def predict():
 
         "severity_risk": (
             "HIGH"
-            if probability >= 0.50
+            if probability >= 0.60
             else "MEDIUM"
             if probability >= 0.30
             else "LOW"
