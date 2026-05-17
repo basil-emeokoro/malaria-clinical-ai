@@ -1,166 +1,107 @@
-"""
-app.py — Malaria Severity Prediction API (V3.2)
-------------------------------------------------
-Hybrid Clinical ML API
-
-Features:
-✅ Stable RandomForest inference
-✅ No scaling drift
-✅ Clean feature schema
-✅ Explainability-ready
-✅ SHAP-ready architecture
-✅ Clinical override engine
-✅ Payload debugging
-"""
-
-import logging
-import joblib
+from fastapi import FastAPI
+from pydantic import BaseModel
 import pandas as pd
+import joblib
+import shap
+import numpy as np
 
-from flask import Flask, request, jsonify
-from datetime import datetime, UTC
+# ============================================================
+# LOAD MODEL + FEATURES
+# ============================================================
 
-# ------------------------------------------------
-# LOGGING CONFIGURATION
-# ------------------------------------------------
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s  %(levelname)s  %(message)s"
-)
-
-logger = logging.getLogger(__name__)
-
-# ------------------------------------------------
-# FLASK APP INITIALIZATION
-# ------------------------------------------------
-app = Flask(__name__)
-
-# ------------------------------------------------
-# LOAD TRAINED MODEL + FEATURES
-# ------------------------------------------------
 model = joblib.load("model/model_v3.joblib")
 
 FEATURES = joblib.load(
     "model/features_v3.joblib"
 )
 
-# ------------------------------------------------
-# LIVE API STATISTICS
-# ------------------------------------------------
-stats = {
-    "total_requests": 0,
-    "severe_predicted": 0,
-    "not_severe_predicted": 0,
-    "errors": 0,
-    "started_at": datetime.now(UTC).isoformat()
-}
+# ============================================================
+# SHAP EXPLAINER
+# ============================================================
 
-# ------------------------------------------------
-# HEALTH CHECK ENDPOINT
-# ------------------------------------------------
-@app.route("/health")
-def health():
+explainer = shap.TreeExplainer(model)
 
-    return jsonify({
-        "status": "ok",
-        "model_loaded": True
-    }), 200
+# ============================================================
+# FASTAPI APP
+# ============================================================
+
+app = FastAPI(
+    title="Malaria Severity Prediction API",
+    version="5.0"
+)
+
+# ============================================================
+# INPUT SCHEMA
+# ============================================================
+
+class PatientData(BaseModel):
+
+    age: int
+    sex: int
+
+    fever: int
+    cold: int
+    rigor: int
+    fatigue: int
+    headache: int
+
+    bitter_tongue: int
+    vomiting: int
+    diarrhea: int
+    convulsion: int
+    anemia: int
+    jaundice: int
+    coca_cola_urine: int
+
+    hypoglycemia: int
+    prostration: int
+    hyperpyrexia: int
 
 
-# ------------------------------------------------
-# MODEL INFO ENDPOINT
-# ------------------------------------------------
-@app.route("/info")
-def info():
+# ============================================================
+# ROOT ROUTE
+# ============================================================
 
-    return jsonify({
-        "model": "Malaria Severity Classifier",
-        "version": "3.2.0",
-        "description": (
-            "Hybrid malaria severity prediction API using "
-            "machine learning probability plus clinical override rules."
-        ),
-        "features": FEATURES,
-        "target": "severe_malaria (0 = not severe, 1 = severe)",
-        "endpoint": "POST /predict"
-    }), 200
+@app.get("/")
+def root():
+    return {
+        "message": "Malaria Severity Prediction API Running"
+    }
 
+# ============================================================
+# PREDICTION ROUTE
+# ============================================================
 
-# ------------------------------------------------
-# PREDICTION ENDPOINT
-# ------------------------------------------------
-@app.route("/predict", methods=["POST"])
-def predict():
+@app.post("/predict")
+def predict(data: PatientData):
 
-    # Track request count
-    stats["total_requests"] += 1
+    # --------------------------------------------------------
+    # Convert input to dataframe
+    # --------------------------------------------------------
 
-    # Parse incoming JSON
-    body = request.get_json(silent=True)
+    body = data.dict()
 
-    # Debug raw input
-    print("\n================================================")
-    print("[RAW INPUT DATA]")
-    print(body)
-    print("================================================")
+    input_df = pd.DataFrame([body])
 
-    if body is None:
-        stats["errors"] += 1
-        return jsonify({
-            "error": "Invalid JSON request."
-        }), 400
+    input_df = input_df[FEATURES]
 
-    # Validate required features
-    missing = [
-        f for f in FEATURES
-        if f not in body
-    ]
-
-    if missing:
-        stats["errors"] += 1
-        return jsonify({
-            "error": "Missing features.",
-            "missing": missing,
-            "required": FEATURES
-        }), 422
-
-    # Convert request into DataFrame
-    try:
-        X = pd.DataFrame(
-            [[float(body[f]) for f in FEATURES]],
-            columns=FEATURES
-        )
-
-        # Debug model input
-        print("\n[MODEL INPUT]")
-        print(X)
-        print("================================================\n")
-
-    except Exception as e:
-        stats["errors"] += 1
-        return jsonify({
-            "error": str(e)
-        }), 422
-
-    # ------------------------------------------------
-    # RUN ML MODEL PREDICTION
-    # ------------------------------------------------
-    prediction = int(
-        model.predict(X)[0]
-    )
+    # --------------------------------------------------------
+    # Model prediction
+    # --------------------------------------------------------
 
     probability = float(
-        model.predict_proba(X)[0][1]
+        model.predict_proba(input_df)[0][1]
     )
 
-    # ------------------------------------------------
+    prediction = int(
+        model.predict(input_df)[0]
+    )
+
+    # --------------------------------------------------------
     # CLINICAL OVERRIDE ENGINE
-    # ------------------------------------------------
-    # Rationale:
-    # The dataset is small and the ML model is conservative.
-    # Therefore, high-risk clinical indicators are used as an
-    # escalation safeguard, similar to real clinical decision support.
-    # ------------------------------------------------
+    # --------------------------------------------------------
+
+    critical_flags = 0
 
     critical_symptoms = [
         "convulsion",
@@ -171,117 +112,96 @@ def predict():
         "coca_cola_urine"
     ]
 
-    critical_flags = 0
-    active_critical_symptoms = []
-
     for symptom in critical_symptoms:
-        if int(body.get(symptom, 0)) == 1:
-            critical_flags += 1
-            active_critical_symptoms.append(symptom)
 
-    # Decide risk level using hybrid logic:
-    # 1. Clinical override first
-    # 2. Then ML probability thresholds
+        if body.get(symptom, 0) == 1:
+            critical_flags += 1
+
+    # --------------------------------------------------------
+    # Risk escalation logic
+    # --------------------------------------------------------
+
     if critical_flags >= 3:
+
         severity_risk = "HIGH"
-        risk_basis = "clinical_override"
 
     elif probability >= 0.55:
+
         severity_risk = "HIGH"
-        risk_basis = "model_probability"
 
     elif probability >= 0.35:
+
         severity_risk = "MEDIUM"
-        risk_basis = "model_probability"
 
     else:
+
         severity_risk = "LOW"
-        risk_basis = "model_probability"
 
-    # Human-readable diagnosis label still follows the ML class prediction
-    label = (
-        "Severe Malaria"
-        if prediction == 1
-        else "Not Severe Malaria"
-    )
+    # --------------------------------------------------------
+    # Final diagnosis
+    # --------------------------------------------------------
 
-    # Update prediction statistics
-    if prediction == 1:
-        stats["severe_predicted"] += 1
+    if (
+        prediction == 1
+        or severity_risk == "HIGH"
+    ):
+
+        diagnosis = "Severe Malaria"
+
     else:
-        stats["not_severe_predicted"] += 1
 
-    # ------------------------------------------------
-    # EXPLAINABILITY SECTION
-    # ------------------------------------------------
-    top_contributors = []
+        diagnosis = "Not Severe Malaria"
 
-    try:
-        if hasattr(model, "feature_importances_"):
+    # --------------------------------------------------------
+    # SHAP EXPLAINABILITY
+    # --------------------------------------------------------
 
-            importances = pd.Series(
-                model.feature_importances_,
-                index=FEATURES
-            ).sort_values(ascending=False)
+    shap_values = explainer.shap_values(input_df)
 
-            top_contributors = [
-                {
-                    "feature": f,
-                    "importance": round(
-                        float(importances[f]),
-                        4
-                    )
-                }
-                for f in importances.head(5).index
-            ]
+    severe_class_shap = shap_values[1][0]
 
-    except Exception as e:
-        logger.warning(
-            f"Explainability failed: {e}"
-        )
+    feature_impacts = []
 
-    # Log prediction
-    logger.info(
-        f"Prediction → {label} "
-        f"(prob={probability:.3f}, risk={severity_risk}, basis={risk_basis})"
+    for feature, value in zip(
+        FEATURES,
+        severe_class_shap
+    ):
+
+        feature_impacts.append({
+            "feature": feature,
+            "impact": round(float(value), 4)
+        })
+
+    # --------------------------------------------------------
+    # Sort by absolute impact
+    # --------------------------------------------------------
+
+    feature_impacts = sorted(
+        feature_impacts,
+        key=lambda x: abs(x["impact"]),
+        reverse=True
     )
 
-    # ------------------------------------------------
-    # FINAL API RESPONSE
-    # ------------------------------------------------
-    return jsonify({
+    top_features = feature_impacts[:5]
+
+    # --------------------------------------------------------
+    # API RESPONSE
+    # --------------------------------------------------------
+
+    return {
+
+        "diagnosis": diagnosis,
+
         "prediction": prediction,
-        "label": label,
-        "probability_severe": round(probability, 4),
-        "severity_risk": severity_risk,
-        "risk_basis": risk_basis,
+
+        "severity_probability": round(
+            probability * 100,
+            2
+        ),
+
+        "risk_level": severity_risk,
+
         "critical_flags": critical_flags,
-        "active_critical_symptoms": active_critical_symptoms,
-        "top_contributors": top_contributors
-    }), 200
 
-
-# ------------------------------------------------
-# LIVE STATS ENDPOINT
-# ------------------------------------------------
-@app.route("/stats")
-def get_stats():
-
-    return jsonify(stats), 200
-
-
-# ------------------------------------------------
-# ENTRY POINT
-# ------------------------------------------------
-if __name__ == "__main__":
-
-    logger.info(
-        "Starting Malaria Severity "
-        "Prediction API on port 5000 ..."
-    )
-
-    app.run(
-        host="0.0.0.0",
-        port=5000,
-        debug=False
-    )
+        "top_features": top_features
+    }
