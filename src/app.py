@@ -1,50 +1,55 @@
-from fastapi import FastAPI
-from pydantic import BaseModel
-import pandas as pd
+"""
+app.py — Malaria Severity Prediction API (V5)
+------------------------------------------------
+Hybrid Explainable Clinical ML API
+
+Architecture:
+✅ V3 RandomForest model
+✅ Clinical override engine
+✅ SHAP TreeExplainer
+✅ FastAPI backend
+✅ Explainability-ready JSON response
+"""
+
 import joblib
 import shap
-import numpy as np
+import pandas as pd
 
-# ============================================================
-# LOAD MODEL + FEATURES
-# ============================================================
+from fastapi import FastAPI
+from pydantic import BaseModel
 
+
+# ------------------------------------------------
+# LOAD MODEL + FEATURE SCHEMA
+# ------------------------------------------------
 model = joblib.load("model/model_v3.joblib")
+FEATURES = joblib.load("model/features_v3.joblib")
 
-FEATURES = joblib.load(
-    "model/features_v3.joblib"
-)
-
-# ============================================================
-# SHAP EXPLAINER
-# ============================================================
-
+# SHAP explainer for RandomForest model
 explainer = shap.TreeExplainer(model)
 
-# ============================================================
-# FASTAPI APP
-# ============================================================
 
+# ------------------------------------------------
+# FASTAPI APP
+# ------------------------------------------------
 app = FastAPI(
     title="Malaria Severity Prediction API",
-    version="5.0"
+    version="5.0.0",
+    description="Hybrid explainable clinical decision support API for malaria severity prediction."
 )
 
-# ============================================================
+
+# ------------------------------------------------
 # INPUT SCHEMA
-# ============================================================
-
+# ------------------------------------------------
 class PatientData(BaseModel):
-
     age: int
     sex: int
-
     fever: int
     cold: int
     rigor: int
     fatigue: int
     headache: int
-
     bitter_tongue: int
     vomiting: int
     diarrhea: int
@@ -52,57 +57,79 @@ class PatientData(BaseModel):
     anemia: int
     jaundice: int
     coca_cola_urine: int
-
     hypoglycemia: int
     prostration: int
     hyperpyrexia: int
 
 
-# ============================================================
-# ROOT ROUTE
-# ============================================================
-
+# ------------------------------------------------
+# ROOT ENDPOINT
+# ------------------------------------------------
 @app.get("/")
 def root():
     return {
-        "message": "Malaria Severity Prediction API Running"
+        "status": "running",
+        "message": "Malaria Severity Prediction API is active."
     }
 
-# ============================================================
-# PREDICTION ROUTE
-# ============================================================
 
+# ------------------------------------------------
+# HEALTH ENDPOINT
+# ------------------------------------------------
+@app.get("/health")
+def health():
+    return {
+        "status": "ok",
+        "model_loaded": True,
+        "model_version": "v3",
+        "shap_enabled": True
+    }
+
+
+# ------------------------------------------------
+# INFO ENDPOINT
+# ------------------------------------------------
+@app.get("/info")
+def info():
+    return {
+        "model": "RandomForestClassifier",
+        "model_version": "v3",
+        "architecture": "V3 RandomForest + Clinical Override + SHAP",
+        "features": FEATURES,
+        "target": "severe_malaria"
+    }
+
+
+# ------------------------------------------------
+# PREDICTION ENDPOINT
+# ------------------------------------------------
 @app.post("/predict")
 def predict(data: PatientData):
 
-    # --------------------------------------------------------
-    # Convert input to dataframe
-    # --------------------------------------------------------
+    # Convert Pydantic object into dictionary
+    body = data.model_dump()
 
-    body = data.dict()
-
-    input_df = pd.DataFrame([body])
-
-    input_df = input_df[FEATURES]
-
-    # --------------------------------------------------------
-    # Model prediction
-    # --------------------------------------------------------
-
-    probability = float(
-        model.predict_proba(input_df)[0][1]
+    # Create dataframe in exact training feature order
+    X = pd.DataFrame(
+        [[float(body[f]) for f in FEATURES]],
+        columns=FEATURES
     )
 
-    prediction = int(
-        model.predict(input_df)[0]
+    # -------------------------------
+    # ML PREDICTION
+    # -------------------------------
+    prediction = int(model.predict(X)[0])
+    probability = float(model.predict_proba(X)[0][1])
+
+    label = (
+        "Severe Malaria"
+        if prediction == 1
+        else "Not Severe Malaria"
     )
 
-    # --------------------------------------------------------
+    # -------------------------------
     # CLINICAL OVERRIDE ENGINE
-    # --------------------------------------------------------
-
-    critical_flags = 0
-
+    # -------------------------------
     critical_symptoms = [
         "convulsion",
         "hypoglycemia",
@@ -112,96 +139,119 @@ def predict(data: PatientData):
         "coca_cola_urine"
     ]
 
-    for symptom in critical_symptoms:
+    active_critical_symptoms = [
+        symptom for symptom in critical_symptoms
+        if int(body.get(symptom, 0)) == 1
+    ]
 
-        if body.get(symptom, 0) == 1:
-            critical_flags += 1
-
-    # --------------------------------------------------------
-    # Risk escalation logic
-    # --------------------------------------------------------
+    critical_flags = len(active_critical_symptoms)
 
     if critical_flags >= 3:
-
         severity_risk = "HIGH"
+        risk_basis = "clinical_override"
 
     elif probability >= 0.55:
-
         severity_risk = "HIGH"
+        risk_basis = "model_probability"
 
     elif probability >= 0.35:
-
         severity_risk = "MEDIUM"
+        risk_basis = "model_probability"
 
     else:
-
         severity_risk = "LOW"
+        risk_basis = "model_probability"
 
-    # --------------------------------------------------------
-    # Final diagnosis
-    # --------------------------------------------------------
+    # If rule engine escalates to HIGH, final display label should reflect severe concern
+    final_label = (
+        "Severe Malaria"
+        if severity_risk == "HIGH" or prediction == 1
+        else "Not Severe Malaria"
+    )
 
-    if (
-        prediction == 1
-        or severity_risk == "HIGH"
-    ):
-
-        diagnosis = "Severe Malaria"
-
-    else:
-
-        diagnosis = "Not Severe Malaria"
-
-    # --------------------------------------------------------
+    # -------------------------------
     # SHAP EXPLAINABILITY
-    # --------------------------------------------------------
+    # -------------------------------
+    shap_values = explainer.shap_values(X)
 
-    shap_values = explainer.shap_values(input_df)
+    # For binary classification, class index 1 = severe malaria
+    severe_shap_values = shap_values[1][0]
 
-    severe_class_shap = shap_values[1][0]
+    shap_contributors = []
 
-    feature_impacts = []
-
-    for feature, value in zip(
-        FEATURES,
-        severe_class_shap
-    ):
-
-        feature_impacts.append({
+    for feature, impact in zip(FEATURES, severe_shap_values):
+        shap_contributors.append({
             "feature": feature,
-            "impact": round(float(value), 4)
+            "impact": round(float(impact), 5),
+            "direction": (
+                "increases severe risk"
+                if impact > 0
+                else "reduces severe risk"
+                if impact < 0
+                else "neutral"
+            )
         })
 
-    # --------------------------------------------------------
-    # Sort by absolute impact
-    # --------------------------------------------------------
-
-    feature_impacts = sorted(
-        feature_impacts,
-        key=lambda x: abs(x["impact"]),
+    # Sort by absolute SHAP impact
+    shap_contributors = sorted(
+        shap_contributors,
+        key=lambda item: abs(item["impact"]),
         reverse=True
     )
 
-    top_features = feature_impacts[:5]
+    top_contributors = shap_contributors[:7]
 
-    # --------------------------------------------------------
-    # API RESPONSE
-    # --------------------------------------------------------
+    # -------------------------------
+    # HUMAN-READABLE EXPLANATION
+    # -------------------------------
+    positive_features = [
+        item["feature"]
+        for item in top_contributors
+        if item["impact"] > 0
+    ]
 
+    negative_features = [
+        item["feature"]
+        for item in top_contributors
+        if item["impact"] < 0
+    ]
+
+    if positive_features:
+        explanation_summary = (
+            "The prediction was mainly influenced by "
+            + ", ".join(positive_features[:3])
+            + ", which pushed the model toward severe malaria risk."
+        )
+    else:
+        explanation_summary = (
+            "No strong positive SHAP contributor was detected for severe malaria risk."
+        )
+
+    if active_critical_symptoms:
+        clinical_summary = (
+            "Clinical override considered the following critical indicators: "
+            + ", ".join(active_critical_symptoms)
+            + "."
+        )
+    else:
+        clinical_summary = (
+            "No critical clinical override indicators were active."
+        )
+
+    # -------------------------------
+    # RESPONSE
+    # -------------------------------
     return {
-
-        "diagnosis": diagnosis,
-
         "prediction": prediction,
-
-        "severity_probability": round(
-            probability * 100,
-            2
-        ),
-
-        "risk_level": severity_risk,
-
+        "label": final_label,
+        "model_label": label,
+        "probability_severe": round(probability, 4),
+        "severity_risk": severity_risk,
+        "risk_basis": risk_basis,
         "critical_flags": critical_flags,
-
-        "top_features": top_features
+        "active_critical_symptoms": active_critical_symptoms,
+        "top_contributors": top_contributors,
+        "all_shap_values": shap_contributors,
+        "explanation_summary": explanation_summary,
+        "clinical_summary": clinical_summary
     }
