@@ -1,0 +1,109 @@
+
+
+A. Find and replace inside one file in VS Code
+Open the file, e.g. src/ui.py.
+Press:
+Ctrl + H
+In the first box, type what you want to find:
+use_container_width=True
+In the second box, type the replacement:
+width="stretch"
+Press:
+Enter
+
+to replace one at a time.
+
+Press:
+Ctrl + Alt + Enter
+
+to replace all matches in the current file.
+
+B. Find and replace across the whole project folder
+Open your project folder in VS Code:
+File → Open Folder
+
+Choose:
+
+C:\ADA_Data_Science\Projects\malaria-clinical-ai
+Press:
+Ctrl + Shift + H
+In the search box, type:
+use_container_width=True
+In the replace box, type:
+width="stretch"
+Click the small arrow beside each file to preview changes.
+To replace everything in the folder, press:
+Ctrl + Alt + Enter
+
+or click:
+
+Replace All
+
+VS Code may ask for confirmation. Click Replace.
+
+C. Safer method before replacing all
+
+Use this first:
+
+Ctrl + Shift + F
+
+Search only:
+
+use_container_width=True
+
+Review all results.
+
+Then use:
+
+Ctrl + Shift + H
+
+to replace.
+
+D. Best practice before any bulk replace
+
+Run this in PowerShell first:
+
+git status
+
+After replacing, check:
+
+git diff
+
+Then run the app. If everything is okay:
+
+git add .
+git commit -m "Fix Streamlit width parameter and SHAP table display"
+git push origin main
+
+This way, Git becomes your “undo button with receipts.”
+
+
+
+
+
+
+
+
+cd C:\ADA_Data_Science\Projects\malaria-clinical-ai
+>> venv\Scripts\activate
+
+
+uvicorn src.app:app --reload
+
+
+
+
+BEFORE YOU TOUCH ANYTHING
+
+Create a rollback point.
+
+PowerShell:
+
+git add .
+git commit -m "Stable baseline before hybrid explainability upgrades"
+
+If anything breaks:
+
+git reset --hard HEAD~1
+
+You instantly recover.

@@ -105,31 +105,37 @@ def info():
 # ------------------------------------------------
 @app.post("/predict")
 def predict(data: PatientData):
+    """
+    Receives patient symptoms, performs ML prediction,
+    applies clinical override rules, calculates SHAP values,
+    and returns explainable clinical decision support output.
+    """
 
-    # Convert Pydantic object into dictionary
+    # ------------------------------------------------
+    # CONVERT REQUEST BODY TO MODEL INPUT
+    # ------------------------------------------------
     body = data.model_dump()
 
-    # Create dataframe in exact training feature order
     X = pd.DataFrame(
         [[float(body[f]) for f in FEATURES]],
         columns=FEATURES
     )
 
-    # -------------------------------
+    # ------------------------------------------------
     # ML PREDICTION
-    # -------------------------------
+    # ------------------------------------------------
     prediction = int(model.predict(X)[0])
     probability = float(model.predict_proba(X)[0][1])
 
-    label = (
+    model_label = (
         "Severe Malaria"
         if prediction == 1
         else "Not Severe Malaria"
     )
 
-    # -------------------------------
-    # CLINICAL OVERRIDE ENGINE
-    # -------------------------------
+    # ------------------------------------------------
+    # CLINICAL FEATURE GROUPS
+    # ------------------------------------------------
     critical_symptoms = [
         "convulsion",
         "hypoglycemia",
@@ -139,22 +145,53 @@ def predict(data: PatientData):
         "coca_cola_urine"
     ]
 
+    symptom_features = [
+        "fever",
+        "cold",
+        "rigor",
+        "fatigue",
+        "headache",
+        "bitter_tongue",
+        "vomiting",
+        "diarrhea",
+        "convulsion",
+        "anemia",
+        "jaundice",
+        "coca_cola_urine",
+        "hypoglycemia",
+        "prostration",
+        "hyperpyrexia"
+    ]
+
+    active_symptoms = [
+        symptom for symptom in symptom_features
+        if int(body.get(symptom, 0)) == 1
+    ]
+
     active_critical_symptoms = [
         symptom for symptom in critical_symptoms
         if int(body.get(symptom, 0)) == 1
     ]
 
+    active_symptom_count = len(active_symptoms)
     critical_flags = len(active_critical_symptoms)
 
-    if critical_flags >= 3:
+    # ------------------------------------------------
+    # HYBRID CLINICAL RISK DECISION LOGIC
+    # ------------------------------------------------
+    if active_symptom_count == 0:
+        severity_risk = "LOW"
+        risk_basis = "clinical_baseline_guardrail"
+
+    elif critical_flags >= 3:
         severity_risk = "HIGH"
         risk_basis = "clinical_override"
 
-    elif probability >= 0.55:
+    elif probability >= 0.75:
         severity_risk = "HIGH"
         risk_basis = "model_probability"
 
-    elif probability >= 0.35:
+    elif probability >= 0.50:
         severity_risk = "MEDIUM"
         risk_basis = "model_probability"
 
@@ -162,37 +199,37 @@ def predict(data: PatientData):
         severity_risk = "LOW"
         risk_basis = "model_probability"
 
-    # If rule engine escalates to HIGH, final display label should reflect severe concern
     final_label = (
         "Severe Malaria"
         if severity_risk == "HIGH" or prediction == 1
         else "Not Severe Malaria"
     )
 
-    # -------------------------------
+    # ------------------------------------------------
     # SHAP EXPLAINABILITY
-    # -------------------------------
+    # ------------------------------------------------
     shap_values = explainer.shap_values(X)
 
-    # For binary classification, class index 1 = severe malaria
+    # For binary classification, class index 1 explains severe malaria
     severe_shap_values = shap_values[1][0]
 
     shap_contributors = []
 
     for feature, impact in zip(FEATURES, severe_shap_values):
+        impact_value = float(impact)
+
         shap_contributors.append({
             "feature": feature,
-            "impact": round(float(impact), 5),
+            "impact": round(impact_value, 5),
             "direction": (
                 "increases severe risk"
-                if impact > 0
+                if impact_value > 0
                 else "reduces severe risk"
-                if impact < 0
+                if impact_value < 0
                 else "neutral"
             )
         })
 
-    # Sort by absolute SHAP impact
     shap_contributors = sorted(
         shap_contributors,
         key=lambda item: abs(item["impact"]),
@@ -201,30 +238,42 @@ def predict(data: PatientData):
 
     top_contributors = shap_contributors[:7]
 
-    # -------------------------------
+    # ------------------------------------------------
     # HUMAN-READABLE EXPLANATION
-    # -------------------------------
-    positive_features = [
+    # ------------------------------------------------
+    active_positive_features = [
         item["feature"]
         for item in top_contributors
         if item["impact"] > 0
+        and (
+            item["feature"] in ["age", "sex"]
+            or int(body.get(item["feature"], 0)) == 1
+        )
     ]
 
-    negative_features = [
-        item["feature"]
-        for item in top_contributors
-        if item["impact"] < 0
-    ]
+    if active_symptom_count == 0:
+        explanation_summary = (
+            "No clinically observed malaria symptoms were active. "
+            "The prediction was based primarily on baseline demographic "
+            "factors and learned model patterns."
+        )
 
-    if positive_features:
+    elif active_positive_features:
+        formatted_features = [
+            feature.replace("_", " ")
+            for feature in active_positive_features[:3]
+        ]
+
         explanation_summary = (
             "The prediction was mainly influenced by "
-            + ", ".join(positive_features[:3])
-            + ", which pushed the model toward severe malaria risk."
+            + ", ".join(formatted_features)
+            + ", which increased severe malaria risk."
         )
+
     else:
         explanation_summary = (
-            "No strong positive SHAP contributor was detected for severe malaria risk."
+            "Observed symptom profile showed relatively low severe-risk "
+            "indicators according to the model."
         )
 
     if active_critical_symptoms:
@@ -238,17 +287,19 @@ def predict(data: PatientData):
             "No critical clinical override indicators were active."
         )
 
-    # -------------------------------
+    # ------------------------------------------------
     # RESPONSE
-    # -------------------------------
+    # ------------------------------------------------
     return {
         "prediction": prediction,
         "label": final_label,
-        "model_label": label,
+        "model_label": model_label,
         "probability_severe": round(probability, 4),
         "severity_risk": severity_risk,
         "risk_basis": risk_basis,
         "critical_flags": critical_flags,
+        "active_symptom_count": active_symptom_count,
+        "active_symptoms": active_symptoms,
         "active_critical_symptoms": active_critical_symptoms,
         "top_contributors": top_contributors,
         "all_shap_values": shap_contributors,
