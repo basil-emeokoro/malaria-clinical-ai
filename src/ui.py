@@ -26,12 +26,14 @@ import pandas as pd
 import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
+from datetime import datetime
 
 
 # ------------------------------------------------
 # GLOBAL CONFIGURATION
 # ------------------------------------------------
 API_URL = "http://127.0.0.1:8000/predict"
+CURRENT_YEAR = datetime.now().year
 
 st.set_page_config(
     page_title="Malaria Severity AI Dashboard",
@@ -157,6 +159,29 @@ st.markdown(
         color: #475569;
         font-size: 15px;
     }
+
+    .app-footer {
+        margin-top: 32px;
+        padding: 22px 18px;
+        border-top: 1px solid #cbd5e1;
+        color: #334155;
+        text-align: center;
+        font-size: 14px;
+        line-height: 1.6;
+    }
+
+    .top-link {
+        display: inline-block;
+        margin-top: 12px;
+        color: #0b4778 !important;
+        font-weight: 800;
+        text-decoration: none;
+    }
+
+    .top-link:hover {
+        text-decoration: underline;
+    }
+
     /* ------------------------------------------
     FIX SELECTBOX CURSOR POINTER
     ------------------------------------------- */
@@ -168,6 +193,8 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
+
+st.markdown('<div id="top"></div>', unsafe_allow_html=True)
 
 
 # ------------------------------------------------
@@ -334,6 +361,9 @@ def format_decision_source(source: str) -> str:
     if source == "clinical_baseline_guardrail":
         return "🩺 Standard Clinical Assessment"
 
+    if source == "symptom_burden_guardrail":
+        return "👁️ Symptom Burden Guardrail"
+
     if source in ["model_probability", "model_prediction"]:
         return "🧠 Model Probability"
 
@@ -368,7 +398,7 @@ def get_risk_icon(risk: str) -> str:
     if risk == "HIGH":
         return "🔴"
 
-    if risk == "MEDIUM":
+    if risk == "MODERATE":
         return "🟠"
 
     return "🟢"
@@ -389,7 +419,7 @@ def clinical_recommendations(result: dict):
             ("🧪 Laboratory Confirmation", "Urgent laboratory confirmation and escalation may be required.")
         ]
 
-    if risk == "MEDIUM":
+    if risk == "MODERATE":
         return [
             ("👁️ Close Monitoring", "Monitor patient closely."),
             ("🧪 Confirmatory Testing", "Request clinical and laboratory assessment."),
@@ -418,7 +448,7 @@ def render_risk_box(result: dict):
             unsafe_allow_html=True
         )
 
-    elif risk == "MEDIUM":
+    elif risk == "MODERATE":
         st.markdown(
             '<div class="risk-medium">🟠 MODERATE RISK — Monitor closely</div>',
             unsafe_allow_html=True
@@ -614,6 +644,13 @@ st.markdown(
     unsafe_allow_html=True
 )
 
+st.warning(
+    "⚠️ Research Prototype Disclaimer: This dashboard is for academic, research, "
+    "and demonstration use only. It is not a medical device and must not be used "
+    "as a final diagnosis. Always confirm with qualified clinical evaluation and "
+    "laboratory testing."
+)
+
 
 # ------------------------------------------------
 # MULTI-TAB DASHBOARD LAYOUT
@@ -736,26 +773,30 @@ with tab1:
         with st.container(border=True):
             st.subheader("📋 Diagnosis Summary")
 
-            c1, c2, c3, c4, c5 = st.columns(5)
+            c1, c2, c3, c4, c5, c6 = st.columns(6)
 
             probability = result.get("probability_severe", 0) * 100
             risk = result.get("severity_risk", "UNKNOWN")
             risk_icon = get_risk_icon(risk)
             decision_source = format_decision_source(result.get("risk_basis", ""))
+            model_prediction = result.get("model_label", "Unavailable")
 
             with c1:
-                render_metric_card("Diagnosis", f"🩺 {result.get('label')}")
+                render_metric_card("Final Clinical Decision", f"🩺 {result.get('label')}")
 
             with c2:
-                render_metric_card("Risk Level", f"{risk_icon} {risk}")
+                render_metric_card("Model Prediction", f"🧠 {model_prediction}")
 
             with c3:
-                render_metric_card("Probability", f"{probability:.2f}%")
+                render_metric_card("Risk Level", f"{risk_icon} {risk}")
 
             with c4:
-                render_metric_card("Decision Source", decision_source)
-                
+                render_metric_card("Probability", f"{probability:.2f}%")
+
             with c5:
+                render_metric_card("Decision Source", decision_source)
+
+            with c6:
                 # Prediction Certainty is supplied by the backend using
                 # clinician-friendly certainty banding.
                 # This avoids confusing values near 50% probability.
@@ -894,7 +935,7 @@ with tab2:
                     df_all = df_all.rename(
                         columns={
                             "impact": "SHAP Contribution",
-                            "direction": "Effect on Severe Risk"
+                            "direction": "Effect on Model Severe-Risk Probability"
                         }
                     )
 
@@ -924,7 +965,8 @@ with tab2:
                             [
                                 "Clinical Feature",
                                 "SHAP Contribution",
-                                "Effect on Severe Risk"
+                                "Effect on Model Severe-Risk Probability",
+                                "Clinical Status"
                             ]
                         ],
                         width="stretch"
@@ -1027,3 +1069,18 @@ with tab4:
             st.json(st.session_state.payload)
         else:
             st.info("No prediction payload yet.")
+
+
+# ------------------------------------------------
+# FOOTER
+# ------------------------------------------------
+st.markdown(
+    f"""
+    <div class="app-footer">
+        © {CURRENT_YEAR} ADA Global Academy Data Science Scholar | Developed by Basil Emeokoro. All rights reserved.<br>
+        Research prototype for safety-aware explainable hybrid clinical decision support.<br>
+        <a href="#top" class="top-link">⬆ Return to Top</a>
+    </div>
+    """,
+    unsafe_allow_html=True
+)

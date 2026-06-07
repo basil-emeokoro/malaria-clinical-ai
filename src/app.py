@@ -194,7 +194,7 @@ def predict(data: PatientData):
         risk_basis = "model_probability"
 
     elif probability_severe >= 0.50:
-        severity_risk = "MEDIUM"
+        severity_risk = "MODERATE"
         risk_basis = "model_probability"
 
     else:
