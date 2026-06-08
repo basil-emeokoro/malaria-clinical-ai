@@ -13,7 +13,7 @@ Core Features:
 ✅ Group-based symptom selection
 ✅ Select All and Reset controls
 ✅ SHAP explainability charts
-✅ Clinical override visibility
+✅ Clinical safety layer visibility
 ✅ Clean separated frames using Streamlit containers
 ✅ Research dashboard and model information tab
 """
@@ -351,15 +351,17 @@ def format_decision_source(source: str) -> str:
     Converts backend decision source into a clinician-safe display label.
 
     The label intentionally avoids exposing raw backend codes directly
-    to end users. When a clinical override is active, the badge clearly
-    communicates that the safety layer escalated the final decision.
+    to end users.
     """
 
     if source == "clinical_override":
         return "🛡️ Safety Escalation Active"
 
     if source == "clinical_baseline_guardrail":
-        return "🩺 Standard Clinical Assessment"
+        return "🩺 Baseline Clinical Safety Assessment"
+
+    if source == "clinical_safety_confirmed":
+        return "Clinical Safety Confirmed"
 
     if source == "symptom_burden_guardrail":
         return "👁️ Symptom Burden Guardrail"
@@ -479,7 +481,7 @@ def render_metric_card(title: str, value: str):
 
 def render_critical_symptom_panel(result: dict):
     """
-    Displays active clinical override indicators as warning cards.
+    Displays active clinical safety indicators as warning cards.
     """
 
     active_critical = result.get("active_critical_symptoms", [])
@@ -496,7 +498,7 @@ def render_critical_symptom_panel(result: dict):
             )
     else:
         st.markdown(
-            '<div class="safe-card">✅ No critical clinical override indicators were detected.</div>',
+            '<div class="safe-card">✅ No critical clinical safety indicators were detected.</div>',
             unsafe_allow_html=True
         )
 
@@ -536,7 +538,7 @@ def render_explainability_chart(df: pd.DataFrame, chart_type: str, risk_basis: s
     df = df.sort_values("abs_impact", ascending=False)
 
     # SHAP only explains the machine-learning probability layer.
-    # If the final decision came from clinical override, the title must
+    # If the final decision came from the clinical safety layer, the title must
     # make that distinction clear for academic and clinical defensibility.
     shap_title = (
         "SHAP Feature Impact on Model Probability"
@@ -637,7 +639,7 @@ st.markdown(
         <div class="hero-title">🧬 Malaria Severity AI Dashboard</div>
         <div class="hero-subtitle">Explainable Hybrid Clinical Decision Support System</div>
         <div class="hero-text">
-            Powered by RandomForest V3, Clinical Override Engine, and SHAP Explainability.
+            Powered by RandomForest V3, Clinical Safety Layer, and SHAP Explainability.
         </div>
     </div>
     """,
@@ -778,7 +780,9 @@ with tab1:
             probability = result.get("probability_severe", 0) * 100
             risk = result.get("severity_risk", "UNKNOWN")
             risk_icon = get_risk_icon(risk)
-            decision_source = format_decision_source(result.get("risk_basis", ""))
+            decision_source = result.get("risk_basis_display") or format_decision_source(
+                result.get("risk_basis", "")
+            )
             model_prediction = result.get("model_label", "Unavailable")
 
             with c1:
@@ -808,8 +812,8 @@ with tab1:
             # HYBRID DECISION REASONING BOX
             # ---------------------------------------------------
             # This explains whether the final decision came from the
-            # model probability layer, baseline guardrail, or clinical
-            # safety override layer.
+            # model probability layer, baseline safety assessment, or
+            # clinical safety layer.
             # ---------------------------------------------------
             hybrid_reasoning = result.get("hybrid_reasoning", "")
 
@@ -863,7 +867,7 @@ with tab2:
 
             # Backend risk basis tells the UI whether SHAP is explaining
             # the direct model prediction or only the model-probability layer
-            # behind a clinical override.
+            # behind a clinical safety layer.
             risk_basis = result.get("risk_basis", "")
 
             render_explainability_chart(df_shap, chart_type, risk_basis)
@@ -872,12 +876,12 @@ with tab2:
             # SHAP TRANSPARENCY NOTE
             # ---------------------------------------------------
             # Makes the boundary between model explainability and
-            # clinical override rules explicit.
+            # clinical safety rules explicit.
             # ---------------------------------------------------
             st.info(
                 "Note: SHAP explains machine-learning probability patterns only. "
                 "Final clinical decisions may additionally include rule-based "
-                "safety overrides for high-risk symptoms."
+                "clinical safety checks for high-risk symptoms."
             )
 
             st.markdown("### 🧠 AI Explanation Summary")
@@ -1018,7 +1022,7 @@ with tab3:
 
         st.warning(
             "Research Note: The model has modest statistical performance, "
-            "but the hybrid clinical override layer improves safety behavior "
+            "but the hybrid clinical safety layer improves safety behavior "
             "for high-risk symptom patterns."
         )
 
@@ -1054,7 +1058,7 @@ with tab4:
         st.markdown(
             """
             - **Model:** RandomForestClassifier V3
-            - **Decision Logic:** Model probability + clinical override
+            - **Decision Logic:** Model probability + clinical safety layer
             - **Explainability:** SHAP TreeExplainer
             - **Backend:** FastAPI
             - **Frontend:** Streamlit

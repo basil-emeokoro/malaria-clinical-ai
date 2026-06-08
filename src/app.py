@@ -5,16 +5,17 @@ Hybrid Explainable Clinical ML API
 
 Architecture:
 - V3 RandomForest model
-- Clinical safety override engine
+- Clinical safety assessment layer
 - SHAP TreeExplainer
 - FastAPI backend
 - Prediction certainty banding
-- Override-aware explanation logic
+- Safety-aware explanation logic
 """
 
 import joblib
 import shap
 import pandas as pd
+from datetime import datetime
 
 from fastapi import FastAPI
 from pydantic import BaseModel
@@ -96,7 +97,7 @@ def info():
     return {
         "model": "RandomForestClassifier",
         "model_version": "v3",
-        "architecture": "V3 RandomForest + Clinical Override + SHAP + Prediction Certainty",
+        "architecture": "V3 RandomForest + Clinical Safety Layer + SHAP + Prediction Certainty",
         "features": FEATURES,
         "target": "severe_malaria"
     }
@@ -219,25 +220,81 @@ def predict(data: PatientData):
         else "Not Severe Malaria"
     )
 
+    clinical_override_triggered = risk_basis == "clinical_override"
+    safety_escalated = (
+        clinical_override_triggered
+        and model_prediction != final_prediction
+    )
+    safety_confirmed = (
+        clinical_override_triggered
+        and model_prediction == final_prediction
+        and critical_flags > 0
+    )
+
+    if safety_escalated:
+        risk_basis_display = "Safety Escalation Active"
+        clinical_safety_status = "escalated"
+
+    elif safety_confirmed:
+        risk_basis_display = "Clinical Safety Confirmed"
+        clinical_safety_status = "confirmed"
+
+    elif risk_basis == "clinical_baseline_guardrail":
+        risk_basis_display = "Baseline Clinical Safety Assessment"
+        clinical_safety_status = "baseline_assessment"
+
+    elif risk_basis == "model_probability":
+        risk_basis_display = "Model Probability"
+        clinical_safety_status = "model_probability"
+
+    else:
+        risk_basis_display = risk_basis.replace("_", " ").title()
+        clinical_safety_status = "not_applicable"
+
     # ------------------------------------------------
     # HEALTHCARE-FRIENDLY PREDICTION CERTAINTY
     # ------------------------------------------------
-    if probability_severe < 0.30:
-        prediction_certainty = 0.90
+    if critical_flags >= 4:
+        prediction_certainty = 0.95
+        prediction_certainty_basis = (
+            "High certainty because multiple critical clinical indicators were present."
+        )
 
-    elif probability_severe <= 0.70:
-        prediction_certainty = 0.65
+    elif critical_flags >= 2:
+        prediction_certainty = 0.88
+        prediction_certainty_basis = (
+            "Elevated certainty because more than one critical clinical indicator was present."
+        )
+
+    elif probability_severe > 0.75:
+        prediction_certainty = 0.85
+        prediction_certainty_basis = (
+            "Elevated certainty because the model estimated high severe-malaria probability."
+        )
+
+    elif probability_severe > 0.50:
+        prediction_certainty = 0.75
+        prediction_certainty_basis = (
+            "Moderate certainty because the model probability was above the severe-risk threshold."
+        )
 
     else:
-        prediction_certainty = 0.90
+        prediction_certainty = 0.65
+        prediction_certainty_basis = (
+            "Baseline certainty because severe-risk evidence was limited or mixed."
+        )
 
     # ------------------------------------------------
     # SHAP EXPLAINABILITY
     # ------------------------------------------------
     shap_values = explainer.shap_values(X)
 
-    # Class index 1 explains severe malaria probability
-    severe_shap_values = shap_values[1][0]
+    # Class index 1 explains severe malaria probability.
+    # Supports both older SHAP list output and newer 3D ndarray output.
+    if isinstance(shap_values, list):
+        severe_shap_values = shap_values[1][0]
+    else:
+        severe_shap_values = shap_values[0, :, 1]
 
     shap_contributors = []
 
@@ -267,18 +324,26 @@ def predict(data: PatientData):
     # ------------------------------------------------
     # OVERRIDE-AWARE EXPLANATION SUMMARY
     # ------------------------------------------------
-    if risk_basis == "clinical_override":
+    if safety_escalated:
         explanation_summary = (
-            "The final prediction was upgraded to Severe Malaria due to "
-            "critical clinical indicators including "
+            "The final clinical decision was escalated to Severe Malaria because "
+            "critical clinical indicators were present, including "
             f"{', '.join(active_critical_symptoms)}. "
-            "The override mechanism prioritizes patient safety over model probability."
+            "This safety layer prioritizes clinically significant warning signs when they conflict with model output."
+        )
+
+    elif safety_confirmed:
+        explanation_summary = (
+            "The model prediction and clinical safety assessment both supported Severe Malaria. "
+            "Critical indicators including "
+            f"{', '.join(active_critical_symptoms)} "
+            "confirmed the high-risk interpretation."
         )
 
     elif active_symptom_count == 0:
         explanation_summary = (
             "No clinically observed malaria symptoms were active. "
-            "The prediction was based primarily on baseline demographic factors "
+            "The result reflects a Baseline Clinical Safety Assessment using demographic inputs "
             "and learned model patterns."
         )
 
@@ -295,9 +360,9 @@ def predict(data: PatientData):
 
         if active_positive_features:
             explanation_summary = (
-                "The prediction was mainly influenced by "
+                "The prediction was mainly influenced by observed clinical features including "
                 + ", ".join(active_positive_features[:3])
-                + ", which increased severe malaria risk."
+                + ", which collectively increased estimated severe malaria risk."
             )
         else:
             explanation_summary = (
@@ -310,31 +375,52 @@ def predict(data: PatientData):
     # ------------------------------------------------
     if active_critical_symptoms:
         clinical_summary = (
-            "Clinical override considered the following critical indicators: "
+            "Clinical safety assessment identified the following critical indicators: "
             + ", ".join(active_critical_symptoms)
             + "."
         )
     else:
         clinical_summary = (
-            "No critical clinical override indicators were active."
+            "No critical clinical safety indicators were active."
         )
 
     # ------------------------------------------------
     # HYBRID DECISION REASONING
     # ------------------------------------------------
-    if risk_basis == "clinical_override":
+    if safety_escalated:
         hybrid_reasoning = (
             f"The statistical model estimated a {probability_severe:.2%} severe malaria probability. "
-            f"However, the final diagnosis was escalated to Severe Malaria because "
+            f"The final diagnosis was escalated to Severe Malaria because "
             f"{critical_flags} clinically critical indicator(s) were detected: "
             f"{', '.join(active_critical_symptoms)}. "
-            "The clinical safety layer prioritizes patient protection over statistical uncertainty."
+            f"{prediction_certainty_basis}"
         )
+
+    elif safety_confirmed:
+        hybrid_reasoning = (
+            f"The statistical model estimated a {probability_severe:.2%} severe malaria probability "
+            "and already predicted Severe Malaria. "
+            f"The clinical safety assessment confirmed this interpretation because "
+            f"{critical_flags} clinically critical indicator(s) were detected: "
+            f"{', '.join(active_critical_symptoms)}. "
+            f"{prediction_certainty_basis}"
+        )
+
+    elif risk_basis == "clinical_baseline_guardrail":
+        hybrid_reasoning = (
+            f"The statistical model estimated a {probability_severe:.2%} severe malaria probability. "
+            "The final decision used the Baseline Clinical Safety Assessment because no active malaria symptoms were recorded. "
+            f"{prediction_certainty_basis}"
+        )
+
     else:
         hybrid_reasoning = (
             f"The statistical model estimated a {probability_severe:.2%} severe malaria probability. "
-            f"The final decision was based on {risk_basis.replace('_', ' ')}."
+            f"The final decision was based on {risk_basis_display}. "
+            f"{prediction_certainty_basis}"
         )
+
+    prediction_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     # ------------------------------------------------
     # RESPONSE
@@ -346,8 +432,11 @@ def predict(data: PatientData):
         "model_label": model_label,
         "probability_severe": round(probability_severe, 4),
         "prediction_certainty": prediction_certainty,
+        "prediction_certainty_basis": prediction_certainty_basis,
         "severity_risk": severity_risk,
         "risk_basis": risk_basis,
+        "risk_basis_display": risk_basis_display,
+        "clinical_safety_status": clinical_safety_status,
         "critical_flags": critical_flags,
         "active_symptom_count": active_symptom_count,
         "active_symptoms": active_symptoms,
@@ -356,5 +445,6 @@ def predict(data: PatientData):
         "all_shap_values": shap_contributors,
         "explanation_summary": explanation_summary,
         "clinical_summary": clinical_summary,
-        "hybrid_reasoning": hybrid_reasoning
+        "hybrid_reasoning": hybrid_reasoning,
+        "prediction_timestamp": prediction_timestamp
     }
