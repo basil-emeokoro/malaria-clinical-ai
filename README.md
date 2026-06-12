@@ -1,320 +1,143 @@
-Malaria Clinical AI — Explainable Severity Prediction System
-Overview
-Malaria Clinical AI is an Explainable Artificial Intelligence (XAI)-powered clinical decision support prototype designed to predict malaria severity risk using patient symptoms and demographic indicators.
-The system combines:
+# Malaria Clinical AI - Hybrid Explainable Decision Support Prototype
 
+Research prototype for safety-aware malaria severity decision support using a FastAPI backend, Streamlit frontend, RandomForest V3 model, clinical safety layer, and SHAP explainability.
 
-Machine Learning
+## Current Architecture
 
+- Backend: FastAPI application in `src/app.py`
+- Frontend: Streamlit dashboard in `src/ui.py`
+- Streamlit Cloud entrypoint: `streamlit_app.py`
+- Model: RandomForest V3
+- Active model artifacts: `model/model_v3.joblib`, `model/features_v3.joblib`
+- Reproducibility trainer: `src/train_v3.py`
+- Explainability: SHAP TreeExplainer
+- Clinical safety layer: rule-based safety assessment layered on model probability
 
-Explainable AI (XAI)
+The active backend uses the V3 model artifacts. Do not switch deployment to V4, `pipeline.joblib`, or archived original Flask/training files unless explicitly retraining and revalidating.
 
+## Disclaimer
 
-Flask REST API deployment
+This dashboard is for academic, research, and demonstration use only. It is not a medical device and must not be used as a final diagnosis. Always confirm with qualified clinical evaluation and laboratory testing.
 
+## Local Setup
 
-Streamlit clinical dashboard
+```powershell
+python -m venv venv
+.\venv\Scripts\activate
+pip install -r requirements.txt
+```
 
+Run backend:
 
-Real-time prediction analytics
+```powershell
+uvicorn src.app:app --reload
+```
 
+Run frontend:
 
-Responsible AI debugging workflow
+```powershell
+streamlit run src/ui.py
+```
 
+## API Endpoints
 
-This project was developed as part of the ADA Global Data Science learning and deployment portfolio.
+- `GET /health`
+- `GET /info`
+- `POST /predict`
 
-Project Goals
-The system aims to:
+Example `/predict` payload:
 
+```json
+{
+  "age": 25,
+  "sex": 0,
+  "fever": 1,
+  "cold": 0,
+  "rigor": 1,
+  "fatigue": 1,
+  "headache": 1,
+  "bitter_tongue": 0,
+  "vomiting": 0,
+  "diarrhea": 1,
+  "convulsion": 0,
+  "anemia": 0,
+  "jaundice": 0,
+  "coca_cola_urine": 0,
+  "hypoglycemia": 0,
+  "prostration": 0,
+  "hyperpyrexia": 0
+}
+```
 
-Predict severe malaria risk from patient symptom profiles
+## Docker Backend
 
+Build:
 
-Demonstrate Explainable AI integration in healthcare ML
+```powershell
+docker build -t malaria-clinical-ai .
+```
 
+Run:
 
-Provide interpretable clinical predictions
+```powershell
+docker run -p 8000:8000 malaria-clinical-ai
+```
 
+If local port `8000` is occupied:
 
-Explore trustworthy AI deployment practices
+```powershell
+docker run -p 8010:8000 malaria-clinical-ai
+```
 
+The container still exposes internal port `8000`, preserving Render compatibility.
 
-Simulate real-world ML engineering workflow
+## Render Backend Deployment
 
+1. Push this repository to GitHub.
+2. Create a Render Web Service from the GitHub repository.
+3. Choose Docker deployment.
+4. Use the repository root as the Docker build context.
+5. Keep the Dockerfile command:
 
-Support research in responsible healthcare AI systems
+```text
+uvicorn src.app:app --host 0.0.0.0 --port ${PORT:-8000}
+```
 
+6. Verify:
 
+```text
+https://YOUR-RENDER-SERVICE.onrender.com/health
+https://YOUR-RENDER-SERVICE.onrender.com/info
+```
 
-Current Features
-Machine Learning Pipeline
+## Streamlit Community Cloud
 
+1. Create a Streamlit app from this GitHub repository.
+2. Use `streamlit_app.py` as the entrypoint.
+3. Streamlit installs dependencies from `requirements.txt`.
+4. After Render provides a public backend URL, update `API_URL` in `src/ui.py`:
 
-Random Forest-based severity prediction
+```python
+API_URL = "https://YOUR-RENDER-SERVICE.onrender.com/predict"
+```
 
+5. Redeploy Streamlit and capture at least three prediction screenshots.
 
-Structured feature engineering
+## Expected Model Files
 
+```text
+model/model_v3.joblib
+model/features_v3.joblib
+```
 
-Clinical symptom encoding
+## Submission Checklist
 
-
-Real-time inference pipeline
-
-
-Probability-based risk estimation
-
-
-
-Explainable AI (XAI)
-Current explainability includes:
-
-
-Feature importance extraction
-
-
-Prediction transparency
-
-
-Top contributing factors
-
-
-Interactive contribution charts
-
-
-Explainability-aware UI
-
-
-Planned upgrades:
-
-
-SHAP-based patient-specific explanations
-
-
-Local explanation analysis
-
-
-Explainability governance auditing
-
-
-
-Clinical Dashboard
-The Streamlit dashboard provides:
-
-
-Patient symptom input interface
-
-
-Risk classification
-
-
-Probability estimation
-
-
-Visual severity indicators
-
-
-Explainability charts
-
-
-Clinical recommendation summaries
-
-
-
-Technology Stack
-ltc1q7mhxnw82zyzkjvdtv57geqjjsw0mhgrvq6nx83 FrameworkScikit-learnAPI BackendFlaskFrontend UIStreamlitExplainabilitySHAP (planned integration)Data HandlingPandas / NumPyDeploymentDocker-readyVersion ControlGit + GitHub
-
-Project Structure
-malaria-clinical-ai/│├── data/│   └── Malaria-Data.csv│├── model/│   ├── model.joblib│   ├── model_v2.joblib│   ├── features.joblib│   ├── features_v2.joblib│   └── scaler.joblib│├── src/│   ├── app.py│   ├── ui.py│   ├── train.py│   ├── train_v2.py│   ├── diagnose_data.py│   └── check_labels.py│├── Dockerfile├── requirements.txt└── README.md
-
-API Endpoints
-Health Check
-GET /health
-
-Model Information
-GET /info
-
-Prediction Endpoint
-POST /predict
-Example Request
-{  "age": 25,  "sex": 0,  "fever": 1,  "cold": 1,  "rigor": 1,  "fatigue": 1,  "headace": 1,  "bitter_tongue": 1,  "vomitting": 1,  "diarrhea": 1,  "Convulsion": 1,  "Anemia": 1,  "jundice": 1,  "cocacola_urine": 1,  "hypoglycemia": 1,  "prostraction": 1,  "hyperpyrexia": 1}
-
-Example Response
-{  "prediction": 1,  "label": "Severe Malaria",  "probability_severe": 0.5079,  "severity_risk": "HIGH",  "top_contributors": [    {      "feature": "age",      "importance": 0.2687    },    {      "feature": "headace",      "importance": 0.0613    }  ]}
-
-Model Evaluation
-Current evaluation metrics:
-MetricCurrent StatusAccuracyModerateROC-AUCImprovingExplainabilityIntegratedClinical ConsistencyImprovingDeployment StabilityStable
-
-Explainability & Responsible AI
-One of the major goals of this project is to demonstrate how Explainable AI can help detect unsafe or inconsistent ML behavior before deployment.
-During development, explainability analysis exposed:
-
-
-unstable severity predictions
-
-
-inference inconsistencies
-
-
-preprocessing drift
-
-
-weak feature sensitivity
-
-
-This enabled redesign of the prediction architecture into a more stable and transparent clinical AI pipeline.
-
-Current Development Roadmap
-Phase 1 — Completed
-
-
-Baseline ML model
-
-
-Flask deployment
-
-
-Streamlit dashboard
-
-
-Explainability charts
-
-
-GitHub deployment
-
-
-Prediction auditing
-
-
-Clinical debugging workflow
-
-
-
-Phase 2 — In Progress
-Goals:
-
-
-Improve clinical consistency
-
-
-Improve severe case sensitivity
-
-
-Improve ROC-AUC
-
-
-Improve explainability realism
-
-
-Planned upgrades:
-
-
-Balanced Random Forest
-
-
-SHAP integration
-
-
-Improved calibration
-
-
-Better threshold handling
-
-
-Enhanced model validation
-
-
-
-Research & Educational Value
-This project demonstrates concepts in:
-
-
-Explainable AI (XAI)
-
-
-Responsible AI
-
-
-Clinical Decision Support Systems
-
-
-Healthcare ML Governance
-
-
-AI Auditing
-
-
-Deployment Engineering
-
-
-Human-Centered AI
-
-
-
-Important Disclaimer
-This system is a research and educational prototype.
-It is NOT intended for real clinical deployment or medical diagnosis.
-Predictions should not be used for real-world medical decision-making.
-
-Future Directions
-Potential future enhancements include:
-
-
-SHAP waterfall visualizations
-
-
-XGBoost comparison
-
-
-LightGBM benchmarking
-
-
-Calibration curves
-
-
-Fairness evaluation
-
-
-Bias auditing
-
-
-Cloud deployment
-
-
-Real-time monitoring
-
-
-Multi-disease prediction expansion
-
-
-
-Author
-Basil Emeokoro co-authoring with ADA Global Academy.
-Research interests include:
-
-
-Explainable AI
-
-
-Educational Assessment Systems
-
-
-Responsible AI
-
-
-Clinical AI Governance
-
-
-AI Accountability
-
-
-Digital Assessment Infrastructure
-
-
-GitHub:
-https://github.com/basil-emeokoro
-
-License
-This repository is intended for educational and research purposes.
+- GitHub repository URL ready
+- Render backend URL ready
+- Streamlit frontend URL ready
+- `/health`, `/info`, and `/predict` tested
+- At least three prediction screenshots captured
+- 2-page reflection completed
+- Optional 5-minute demo video completed
+- Final commit hash recorded
+- Final tag recorded: `v1.0-capstone-ready`
