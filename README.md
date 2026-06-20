@@ -97,13 +97,22 @@ The container still exposes internal port `8000`, preserving Render compatibilit
 2. Create a Render Web Service from the GitHub repository.
 3. Choose Docker deployment.
 4. Use the repository root as the Docker build context.
-5. Keep the Dockerfile command:
+5. Use these settings:
+
+```text
+Runtime: Docker
+Build Command: Dockerfile managed by Render
+Start Command: Dockerfile CMD
+Environment Variables: none required for backend; Render supplies PORT automatically
+```
+
+6. Keep the Dockerfile command:
 
 ```text
 uvicorn src.app:app --host 0.0.0.0 --port ${PORT:-8000}
 ```
 
-6. Verify:
+7. Verify:
 
 ```text
 https://YOUR-RENDER-SERVICE.onrender.com/health

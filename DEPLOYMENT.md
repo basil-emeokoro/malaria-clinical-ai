@@ -51,6 +51,15 @@ docker run -p 8010:8000 malaria-clinical-ai
 5. Do not change the container internal port from `8000`.
 6. Render provides the `PORT` environment variable automatically.
 
+Render settings:
+
+```text
+Runtime: Docker
+Build Command: Dockerfile managed by Render
+Start Command: Dockerfile CMD
+Environment Variables: none required for backend; Render supplies PORT automatically
+```
+
 The Docker command is:
 
 ```text
