@@ -32,7 +32,7 @@ from datetime import datetime
 # ------------------------------------------------
 # GLOBAL CONFIGURATION
 # ------------------------------------------------
-API_URL = "http://127.0.0.1:8000/predict"
+API_URL = "https://malaria-clinical-ai.onrender.com/predict"
 CURRENT_YEAR = datetime.now().year
 
 st.set_page_config(
